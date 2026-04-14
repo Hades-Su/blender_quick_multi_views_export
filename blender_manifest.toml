@@ -1,0 +1,21 @@
+schema_version = "1.0.0"
+
+id = "quick_multi_views_export"
+name = "Quick Multi Views Export"
+version = "1.0.0"
+type = "add-on"
+tagline = "Quick Multi Views Export"
+description = "Quickly, automatically, and easily export multi-view images of 3D models."
+tags = ["Import-Export", "Camera", "Render", "3D View"]
+
+maintainer = "苏冥(Hades Su)"
+website = "https://github.com/Hades-Su/blender_quick_multi_views_export"
+
+blender_version_min = "2.80.0"
+# blender_version_max = "5.1.0"
+
+# License conforming to https://spdx.org/licenses/ (use "SPDX: prefix)
+# https://docs.blender.org/manual/en/dev/advanced/extensions/licenses.html
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
