@@ -1,2 +1,5 @@
-# blender_quick_multi_views_export
-A Blender addon for quick, automatic and easy  export multi-view images of 3D models. Quickly, automatically, and easily export multi-view images of 3D models. 一个用于快速、自动且轻松地导出3D模型多视图图像的Blender插件。
+**[中文版(Chinese)](https://github.com/Hades-Su/blender_quick_multi_views_export/blob/main/README_zh.md)看这里.**
+
+[Bilibili(哔哩哔哩)](https://space.bilibili.com/40026064) [Youtube](https://www.youtube.com/@hadessu)
+
+# Quick Multi Views Export for Blender（快捷多视图导出工具）
