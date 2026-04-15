@@ -1,6 +1,164 @@
-import bpy
+# -*- coding: utf-8 -*-
+
 import os
-from bpy.props import StringProperty, FloatProperty, IntProperty, BoolProperty, CollectionProperty, EnumProperty
+import bpy
+
+from bpy.props import StringProperty, FloatProperty, IntProperty, CollectionProperty, EnumProperty
+
+def get_objects_origin(context, target=None):
+    """获取对象的原点坐标
+    
+    Args:
+        context: Blender上下文
+        target: 目标模型对象，如果为None则使用选中的对象
+        
+    Returns:
+        tuple: 原点坐标 (x, y, z)
+    """
+    if target and target.type == 'MESH':
+        # 如果指定了目标模型，则使用该模型的位置
+        return (target.location.x, target.location.y, target.location.z)
+    else:
+        # 否则使用选中的对象
+        selected_objects = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        if not selected_objects:
+            return (0, 0, 0)
+        
+        # 计算所有选中对象的平均位置作为原点
+        total_x, total_y, total_z = 0, 0, 0
+        for obj in selected_objects:
+            total_x += obj.location.x
+            total_y += obj.location.y
+            total_z += obj.location.z
+        
+        count = len(selected_objects)
+        return (total_x / count, total_y / count, total_z / count)
+
+def validate_selection(context, operator):
+    """验证选中的对象是否有效
+    
+    Args:
+        context: Blender上下文
+        operator: 操作符实例
+        
+    Returns:
+        tuple: (bool, list, object, tuple) - (是否有效, 选中的对象, 目标模型, 原点坐标)
+    """
+    # 检查是否选中了模型
+    if not context.selected_objects:
+        operator.report({'ERROR'}, "请先选中至少一个模型")
+        return (False, None, None, None)
+    
+    # 检查选中的对象是否包含可渲染的模型
+    has_mesh = False
+    for obj in context.selected_objects:
+        if obj.type == 'MESH':
+            has_mesh = True
+            break
+    
+    if not has_mesh:
+        operator.report({'ERROR'}, "请选中至少一个网格模型")
+        return (False, None, None, None)
+    
+    # 保存当前选中的对象
+    selected_objects = context.selected_objects.copy()
+    
+    # 获取选中的模型
+    selected_meshes = [obj for obj in selected_objects if obj.type == 'MESH']
+    target = selected_meshes[0] if selected_meshes else None
+    
+    # 获取模型原点坐标
+    origin = get_objects_origin(context, target)
+    
+    return (True, selected_objects, target, origin)
+
+def add_view(context, name, view_type, target, origin):
+    """添加一个新的视角
+    
+    Args:
+        context: Blender上下文
+        name: 视角名称
+        view_type: 视角类型
+        target: 目标模型
+        origin: 原点坐标
+        
+    Returns:
+        object: 新创建的视角项
+    """
+    scene = context.scene
+    view_item = scene.multi_view_views.add()
+    
+    # 设置视角属性
+    view_item.name = name
+    view_item.view_type = view_type
+    view_item.target = target
+    
+    # 创建相机，基于模型原点
+    origin_x, origin_y, origin_z = origin
+    
+    # 根据视角类型设置相机位置和旋转
+    if view_type == "FRONT":
+        camera_location = (origin_x, origin_y - 5, origin_z)
+        camera_rotation = (1.5708, 0, 0)
+    elif view_type == "BACK":
+        camera_location = (origin_x, origin_y + 5, origin_z)
+        camera_rotation = (1.5708, 0, 3.1416)
+    elif view_type == "LEFT":
+        camera_location = (origin_x - 5, origin_y, origin_z)
+        camera_rotation = (1.5708, 0, -1.5708)
+    elif view_type == "RIGHT":
+        camera_location = (origin_x + 5, origin_y, origin_z)
+        camera_rotation = (1.5708, 0, 1.5708)
+    elif view_type == "TOP":
+        camera_location = (origin_x, origin_y, origin_z + 5)
+        camera_rotation = (0, 0, 0)
+    elif view_type == "BOTTOM":
+        camera_location = (origin_x, origin_y, origin_z - 5)
+        camera_rotation = (3.1416, 0, 3.1416)
+    elif view_type == "TOP-DOWN":
+        camera_location = (origin_x, origin_y - 5, origin_z + 5)
+        camera_rotation = (0.7854, 0, 0)
+    elif view_type == "BOTTOM-UP":
+        camera_location = (origin_x, origin_y - 5, origin_z - 5)
+        camera_rotation = (2.3562, 0, 0)
+    else:
+        camera_location = (origin_x, origin_y - 5, origin_z)
+        camera_rotation = (1.5708, 0, 0)
+    
+    bpy.ops.object.camera_add(location=camera_location, rotation=camera_rotation)
+    camera = bpy.context.active_object
+    camera.name = "Camera_{0}".format(len(scene.multi_view_views))
+    view_item.camera_name = camera.name
+    
+    # 设置默认值
+    view_item.pos_x, view_item.pos_y, view_item.pos_z = camera.location
+    view_item.rot_x, view_item.rot_y, view_item.rot_z = camera.rotation_euler
+    
+    # 设置默认分辨率
+    if view_type in ["FRONT", "BACK", "LEFT", "RIGHT"]:
+        view_item.resolution_x = 1080
+        view_item.resolution_y = 1920
+    elif view_type in ["TOP", "BOTTOM"]:
+        view_item.resolution_x = 1024
+        view_item.resolution_y = 1024
+    else:
+        view_item.resolution_x = 1920
+        view_item.resolution_y = 1080
+    
+    return view_item
+
+def restore_selection(context, selected_objects):
+    """恢复之前的选择状态
+    
+    Args:
+        context: Blender上下文
+        selected_objects: 之前选中的对象列表
+    """
+    bpy.ops.object.select_all(action='DESELECT')
+    for obj in selected_objects:
+        obj.select_set(True)
+    if selected_objects:
+        context.view_layer.objects.active = selected_objects[0]
 
 class MULTI_VIEW_ViewItem(bpy.types.PropertyGroup):
     name: StringProperty(name="名称")
@@ -20,6 +178,7 @@ class MULTI_VIEW_ViewItem(bpy.types.PropertyGroup):
         default="FRONT",
         update=lambda self, context: self.update_camera_position(context)
     )
+    target: bpy.props.PointerProperty(name="目标模型", type=bpy.types.Object)
     pos_x: FloatProperty(name="位置X", default=0.0, update=lambda self, context: self.update_camera_location(context))
     pos_y: FloatProperty(name="位置Y", default=0.0, update=lambda self, context: self.update_camera_location(context))
     pos_z: FloatProperty(name="位置Z", default=0.0, update=lambda self, context: self.update_camera_location(context))
@@ -33,57 +192,59 @@ class MULTI_VIEW_ViewItem(bpy.types.PropertyGroup):
     def update_camera_position(self, context):
         if self.camera_name in bpy.data.objects:
             camera = bpy.data.objects[self.camera_name]
+            # 获取模型原点坐标
+            origin_x, origin_y, origin_z = get_objects_origin(context, self.target)
             # 根据视角类型设置相机位置和旋转
             if self.view_type == "FRONT":
-                camera.location = (0, -5, 0)
+                camera.location = (origin_x, origin_y - 5, origin_z)
                 camera.rotation_euler = (1.5708, 0, 0)
                 self.pos_x, self.pos_y, self.pos_z = camera.location
                 self.rot_x, self.rot_y, self.rot_z = camera.rotation_euler
                 self.resolution_x, self.resolution_y = 1080, 1920
             elif self.view_type == "BACK":
-                camera.location = (0, 5, 0)
+                camera.location = (origin_x, origin_y + 5, origin_z)
                 camera.rotation_euler = (1.5708, 0, 3.1416)
                 self.pos_x, self.pos_y, self.pos_z = camera.location
                 self.rot_x, self.rot_y, self.rot_z = camera.rotation_euler
                 self.resolution_x, self.resolution_y = 1080, 1920
             elif self.view_type == "LEFT":
-                camera.location = (-5, 0, 0)
+                camera.location = (origin_x - 5, origin_y, origin_z)
                 camera.rotation_euler = (1.5708, 0, -1.5708)
                 self.pos_x, self.pos_y, self.pos_z = camera.location
                 self.rot_x, self.rot_y, self.rot_z = camera.rotation_euler
                 self.resolution_x, self.resolution_y = 1080, 1920
             elif self.view_type == "RIGHT":
-                camera.location = (5, 0, 0)
+                camera.location = (origin_x + 5, origin_y, origin_z)
                 camera.rotation_euler = (1.5708, 0, 1.5708)
                 self.pos_x, self.pos_y, self.pos_z = camera.location
                 self.rot_x, self.rot_y, self.rot_z = camera.rotation_euler
                 self.resolution_x, self.resolution_y = 1080, 1920
             elif self.view_type == "TOP":
-                camera.location = (0, 0, 5)
+                camera.location = (origin_x, origin_y, origin_z + 5)
                 camera.rotation_euler = (0, 0, 0)
                 self.pos_x, self.pos_y, self.pos_z = camera.location
                 self.rot_x, self.rot_y, self.rot_z = camera.rotation_euler
                 self.resolution_x, self.resolution_y = 1024, 1024
             elif self.view_type == "BOTTOM":
-                camera.location = (0, 0, -5)
+                camera.location = (origin_x, origin_y, origin_z - 5)
                 camera.rotation_euler = (3.1416, 0, 3.1416)
                 self.pos_x, self.pos_y, self.pos_z = camera.location
                 self.rot_x, self.rot_y, self.rot_z = camera.rotation_euler
                 self.resolution_x, self.resolution_y = 1024, 1024
             elif self.view_type == "TOP-DOWN":
-                camera.location = (0, -5, 5)
+                camera.location = (origin_x, origin_y - 5, origin_z + 5)
                 camera.rotation_euler = (0.7854, 0, 0)
                 self.pos_x, self.pos_y, self.pos_z = camera.location
                 self.rot_x, self.rot_y, self.rot_z = camera.rotation_euler
                 self.resolution_x, self.resolution_y = 1024, 1024
             elif self.view_type == "BOTTOM-UP":
-                camera.location = (0, -5, -5)
+                camera.location = (origin_x, origin_y - 5, origin_z - 5)
                 camera.rotation_euler = (2.3562, 0, 0)
                 self.pos_x, self.pos_y, self.pos_z = camera.location
                 self.rot_x, self.rot_y, self.rot_z = camera.rotation_euler
                 self.resolution_x, self.resolution_y = 1024, 1024
             else:
-                camera.location = (0, -5, 0)
+                camera.location = (origin_x, origin_y - 5, origin_z)
                 camera.rotation_euler = (1.5708, 0, 0)
                 self.pos_x, self.pos_y, self.pos_z = camera.location
                 self.rot_x, self.rot_y, self.rot_z = camera.rotation_euler
@@ -105,48 +266,20 @@ class MULTI_VIEW_OT_AddView(bpy.types.Operator):
     bl_description = "添加一个新的视角"
     
     def execute(self, context):
-        # 检查是否选中了模型
-        if not context.selected_objects:
-            self.report({'ERROR'}, "请先选中至少一个模型")
+        # 验证选择
+        valid, selected_objects, target, origin = validate_selection(context, self)
+        if not valid:
             return {'CANCELLED'}
         
-        # 检查选中的对象是否包含可渲染的模型
-        has_mesh = False
-        for obj in context.selected_objects:
-            if obj.type == 'MESH':
-                has_mesh = True
-                break
-        
-        if not has_mesh:
-            self.report({'ERROR'}, "请选中至少一个网格模型")
-            return {'CANCELLED'}
-        
+        # 计算视角名称
         scene = context.scene
-        view_item = scene.multi_view_views.add()
+        view_name = "视角{0}".format(len(scene.multi_view_views) + 1)
         
-        # 设置视角名称
-        view_item.name = f"视角{len(scene.multi_view_views)}"
+        # 添加视角
+        add_view(context, view_name, "FRONT", target, origin)
         
-        # 创建相机
-        bpy.ops.object.camera_add(location=(0, -5, 0), rotation=(1.5708, 0, 0))
-        camera = bpy.context.active_object
-        camera.name = f"Camera_{len(scene.multi_view_views)}"
-        view_item.camera_name = camera.name
-        
-        # 设置默认值
-        view_item.pos_x, view_item.pos_y, view_item.pos_z = camera.location
-        view_item.rot_x, view_item.rot_y, view_item.rot_z = camera.rotation_euler
-        
-        # 设置默认分辨率
-        if view_item.view_type in ["FRONT", "BACK", "LEFT", "RIGHT"]:
-            view_item.resolution_x = 1080
-            view_item.resolution_y = 1920
-        elif view_item.view_type in ["TOP", "BOTTOM"]:
-            view_item.resolution_x = 1024
-            view_item.resolution_y = 1024
-        else:
-            view_item.resolution_x = 1920
-            view_item.resolution_y = 1080
+        # 恢复选择
+        restore_selection(context, selected_objects)
         
         return {'FINISHED'}
 
@@ -180,98 +313,48 @@ class MULTI_VIEW_OT_RemoveView(bpy.types.Operator):
         
         return {'FINISHED'}
 
-
-class MULTI_VIEW_OT_AddPresetView(bpy.types.Operator):
-    bl_idname = "multi_view.add_preset_view"
+class MULTI_VIEW_OT_AddPresetThreeView(bpy.types.Operator):
+    bl_idname = "multi_view.add_preset_three_view"
     bl_label = "添加三视图视角"
     bl_description = "添加三视图的视角"
     
     def execute(self, context):
-        # 检查是否选中了模型
-        if not context.selected_objects:
-            self.report({'ERROR'}, "请先选中至少一个模型")
+        # 验证选择
+        valid, selected_objects, target, origin = validate_selection(context, self)
+        if not valid:
             return {'CANCELLED'}
         
-        # 检查选中的对象是否包含可渲染的模型
-        has_mesh = False
-        for obj in context.selected_objects:
-            if obj.type == 'MESH':
-                has_mesh = True
-                break
+        # 添加三视图视角
+        add_view(context, "正面视角", "FRONT", target, origin)
+        add_view(context, "左侧视角", "LEFT", target, origin)
+        add_view(context, "顶部视角", "TOP", target, origin)
         
-        if not has_mesh:
-            self.report({'ERROR'}, "请选中至少一个网格模型")
+        # 恢复选择
+        restore_selection(context, selected_objects)
+        
+        return {'FINISHED'}
+
+class MULTI_VIEW_OT_AddPresetSixView(bpy.types.Operator):
+    bl_idname = "multi_view.add_preset_six_view"
+    bl_label = "添加六视图视角"
+    bl_description = "添加六视图的视角"
+    
+    def execute(self, context):
+        # 验证选择
+        valid, selected_objects, target, origin = validate_selection(context, self)
+        if not valid:
             return {'CANCELLED'}
         
-        # -----
+        # 添加六视图视角
+        add_view(context, "正面视角", "FRONT", target, origin)
+        add_view(context, "背面视角", "BACK", target, origin)
+        add_view(context, "左侧视角", "LEFT", target, origin)
+        add_view(context, "右侧视角", "RIGHT", target, origin)
+        add_view(context, "顶部视角", "TOP", target, origin)
+        add_view(context, "底部视角", "BOTTOM", target, origin)
         
-        scene = context.scene
-        
-        # -- 添加正面视角 --
-        
-        front_view_item = scene.multi_view_views.add()
-        
-        # 设置正面视角名称
-        front_view_item.name = "正面视角"
-        front_view_item.view_type = "FRONT"
-        
-        # 创建相机
-        bpy.ops.object.camera_add(location=(0, -5, 0), rotation=(1.5708, 0, 0))
-        camera = bpy.context.active_object
-        camera.name = f"Camera_{len(scene.multi_view_views)}"
-        front_view_item.camera_name = camera.name
-        
-        # 设置默认值
-        front_view_item.pos_x, front_view_item.pos_y, front_view_item.pos_z = camera.location
-        front_view_item.rot_x, front_view_item.rot_y, front_view_item.rot_z = camera.rotation_euler
-        
-        # 设置默认分辨率
-        front_view_item.resolution_x = 1080
-        front_view_item.resolution_y = 1920
-        
-        # -- 添加左侧视角 --
-        
-        left_view_item = scene.multi_view_views.add()
-        
-        # 设置左侧视角名称
-        left_view_item.name = "左侧视角"
-        left_view_item.view_type = "LEFT"
-        
-        # 创建相机
-        bpy.ops.object.camera_add(location=(-5, 0, 0), rotation=(1.5708, 0, -1.5708))
-        camera = bpy.context.active_object
-        camera.name = f"Camera_{len(scene.multi_view_views)}"
-        left_view_item.camera_name = camera.name
-        
-        # 设置默认值
-        left_view_item.pos_x, left_view_item.pos_y, left_view_item.pos_z = camera.location
-        left_view_item.rot_x, left_view_item.rot_y, left_view_item.rot_z = camera.rotation_euler
-        
-        # 设置默认分辨率
-        left_view_item.resolution_x = 1080
-        left_view_item.resolution_y = 1920
-        
-        # -- 添加顶部视角 --
-        
-        top_view_item = scene.multi_view_views.add()
-        
-        # 设置顶部视角名称
-        top_view_item.name = "顶部视角"
-        top_view_item.view_type = "TOP"
-        
-        # 创建相机
-        bpy.ops.object.camera_add(location=(0, 0, 5), rotation=(0, 0, 0))
-        camera = bpy.context.active_object
-        camera.name = f"Camera_{len(scene.multi_view_views)}"
-        top_view_item.camera_name = camera.name
-        
-        # 设置默认值
-        top_view_item.pos_x, top_view_item.pos_y, top_view_item.pos_z = camera.location
-        top_view_item.rot_x, top_view_item.rot_y, top_view_item.rot_z = camera.rotation_euler
-        
-        # 设置默认分辨率
-        top_view_item.resolution_x = 1024
-        top_view_item.resolution_y = 1024
+        # 恢复选择
+        restore_selection(context, selected_objects)
         
         return {'FINISHED'}
 
@@ -279,7 +362,7 @@ class MULTI_VIEW_OT_ExportCurrentView(bpy.types.Operator):
     bl_idname = "multi_view.export_current_view"
     bl_label = "导出当前选中视图"
     bl_description = "导出当前选中的视图图片"
-
+    
     def execute(self, context):
         scene = context.scene
         if not scene.multi_view_views:
@@ -311,30 +394,37 @@ class MULTI_VIEW_OT_ExportCurrentView(bpy.types.Operator):
             if not scene.world:
                 scene.world = bpy.data.worlds.new("MultiViewWorld")
             scene.world.use_nodes = True
-            nodes = scene.world.node_tree.nodes
-            links = scene.world.node_tree.links
+            # nodes = scene.world.node_tree.nodes
+            # links = scene.world.node_tree.links
             
-            # 找到背景节点
-            background_node = None
-            for node in nodes:
-                if node.type == 'BACKGROUND':
-                    background_node = node
-                    break
+            # # 找到背景节点
+            # background_node = None
+            # for node in nodes:
+            #     if node.type == 'BACKGROUND':
+            #         background_node = node
+            #         break
             
-            if not background_node:
-                background_node = nodes.new(type='ShaderNodeBackground')
-                output_node = nodes.get('World Output')
-                if output_node:
-                    links.new(background_node.outputs['Background'], output_node.inputs['Surface'])
+            # if not background_node:
+            #     background_node = nodes.new(type='ShaderNodeBackground')
+            #     output_node = nodes.get('World Output')
+            #     if output_node:
+            #         links.new(background_node.outputs['Background'], output_node.inputs['Surface'])
             
-            # 设置世界颜色和强度
-            background_node.inputs['Color'].default_value = scene.multi_view_world_color
-            background_node.inputs['Strength'].default_value = scene.multi_view_world_strength
+            # # 设置世界颜色和强度
+            # background_node.inputs['Color'].default_value = scene.multi_view_world_color
+            # background_node.inputs['Strength'].default_value = scene.multi_view_world_strength
         
         # 激活相机
         if view_item.camera_name in bpy.data.objects:
             camera = bpy.data.objects[view_item.camera_name]
             scene.camera = camera
+            
+            # # 更新相机位置和旋转
+            # camera.location = (view_item.pos_x, view_item.pos_y, view_item.pos_z)
+            # camera.rotation_euler = (view_item.rot_x, view_item.rot_y, view_item.rot_z)
+            
+            # 强制更新场景
+            bpy.context.view_layer.update()
             
             # 设置分辨率
             scene.render.resolution_x = view_item.resolution_x
@@ -378,6 +468,9 @@ class MULTI_VIEW_OT_ExportAllViews(bpy.types.Operator):
         original_resolution_x = scene.render.resolution_x
         original_resolution_y = scene.render.resolution_y
         original_world = scene.world
+        # 保存原始选中对象
+        original_selected_objects = context.selected_objects.copy()
+        original_active_object = context.view_layer.objects.active
         
         # 设置背景透明
         scene.render.film_transparent = scene.multi_view_transparent
@@ -387,25 +480,29 @@ class MULTI_VIEW_OT_ExportAllViews(bpy.types.Operator):
             if not scene.world:
                 scene.world = bpy.data.worlds.new("MultiViewWorld")
             scene.world.use_nodes = True
-            nodes = scene.world.node_tree.nodes
-            links = scene.world.node_tree.links
+            # nodes = scene.world.node_tree.nodes
+            # links = scene.world.node_tree.links
             
-            # 找到背景节点
-            background_node = None
-            for node in nodes:
-                if node.type == 'BACKGROUND':
-                    background_node = node
-                    break
+            # # 找到背景节点
+            # background_node = None
+            # for node in nodes:
+            #     if node.type == 'BACKGROUND':
+            #         background_node = node
+            #         break
             
-            if not background_node:
-                background_node = nodes.new(type='ShaderNodeBackground')
-                output_node = nodes.get('World Output')
-                if output_node:
-                    links.new(background_node.outputs['Background'], output_node.inputs['Surface'])
+            # if not background_node:
+            #     background_node = nodes.new(type='ShaderNodeBackground')
+            #     output_node = nodes.get('World Output')
+            #     if output_node:
+            #         links.new(background_node.outputs['Background'], output_node.inputs['Surface'])
             
-            # 设置世界颜色和强度
-            background_node.inputs['Color'].default_value = scene.multi_view_world_color
-            background_node.inputs['Strength'].default_value = scene.multi_view_world_strength
+            # # 设置世界颜色和强度
+            # background_node.inputs['Color'].default_value = scene.multi_view_world_color
+            # background_node.inputs['Strength'].default_value = scene.multi_view_world_strength
+        
+        # 清除选中对象，避免影响渲染
+        bpy.ops.object.select_all(action='DESELECT')
+        context.view_layer.objects.active = None
         
         # 导出每个视图
         total_views = len(scene.multi_view_views)
@@ -414,6 +511,13 @@ class MULTI_VIEW_OT_ExportAllViews(bpy.types.Operator):
             if view_item.camera_name in bpy.data.objects:
                 camera = bpy.data.objects[view_item.camera_name]
                 scene.camera = camera
+                
+                # # 更新相机位置和旋转
+                # camera.location = (view_item.pos_x, view_item.pos_y, view_item.pos_z)
+                # camera.rotation_euler = (view_item.rot_x, view_item.rot_y, view_item.rot_z)
+                
+                # 强制更新场景
+                bpy.context.view_layer.update()
                 
                 # 设置分辨率
                 scene.render.resolution_x = view_item.resolution_x
@@ -435,6 +539,11 @@ class MULTI_VIEW_OT_ExportAllViews(bpy.types.Operator):
         scene.render.resolution_x = original_resolution_x
         scene.render.resolution_y = original_resolution_y
         scene.world = original_world
+        # 恢复原始选中对象
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in original_selected_objects:
+            obj.select_set(True)
+        context.view_layer.objects.active = original_active_object
         
         self.report({'INFO'}, "所有视图导出完成")
         return {'FINISHED'}
@@ -459,10 +568,17 @@ class MULTI_VIEW_ExportPanel(bpy.types.Panel):
         row = box.row()
         row.template_list("UI_UL_list", "multi_view_views", scene, "multi_view_views", scene, "multi_view_active_index", type='DEFAULT', columns=2)
         
-        col = row.column(align=True)
+        # 当 align=True 时，列中的所有按钮（或布局元素）会被强制设置为相同的宽度（以该列中最宽的元素为准），使它们在水平方向上对齐。
+        # 同时，元素之间的垂直间距会被移除，让它们紧密排列，没有额外的空白。
+        btn_col = row.column()
+        # 添加/删除按钮
+        col = btn_col.column(align=True)
         col.operator("multi_view.add_view", icon="ADD", text="")
         col.operator("multi_view.remove_view", icon="REMOVE", text="")
-        col.operator("multi_view.add_preset_view", icon="PRESET_NEW", text="")
+        # 添加预设按钮
+        col = btn_col.column(align=True)
+        col.operator("multi_view.add_preset_three_view", icon="EVENT_THREEKEY", text="")
+        col.operator("multi_view.add_preset_six_view", icon="EVENT_SIXKEY", text="")
         
         # 选中视角的设置
         if scene.multi_view_views and scene.multi_view_active_index < len(scene.multi_view_views):
@@ -475,6 +591,9 @@ class MULTI_VIEW_ExportPanel(bpy.types.Panel):
             
             row = box.row()
             row.prop(view_item, "view_type", text="视角类型")
+            
+            # 目标模型输入框（注释掉不显示）
+            # row.prop(view_item, "target", text="目标模型")
             
             box.label(text="相机位置")
             row = box.row()
@@ -501,22 +620,19 @@ class MULTI_VIEW_ExportPanel(bpy.types.Panel):
         row.prop(scene, "multi_view_transparent", text="背景透明")
         
         row = box.row()
-        row.prop(scene, "multi_view_scene_lights", text="场景灯光")
+        row.prop(scene, "multi_view_scene_world", text="场景世界（请在世界属性面板配置世界参数）")
         
-        row = box.row()
-        row.prop(scene, "multi_view_scene_world", text="场景世界")
-        
-        if scene.multi_view_scene_world:
-            row = box.row()
-            row.prop(scene, "multi_view_world_color", text="世界颜色")
+        # if scene.multi_view_scene_world:
+        #     row = box.row()
+        #     row.prop(scene, "multi_view_world_color", text="世界颜色")
             
-            row = box.row()
-            row.prop(scene, "multi_view_world_strength", text="世界强度")
+        #     row = box.row()
+        #     row.prop(scene, "multi_view_world_strength", text="世界强度")
         
         # 导出
         box = layout.box()
-        box.label(text="导出（请在输出面板设置输出参数）")
+        box.label(text="导出（请在输出属性面板配置保存参数）")
         
         col = box.column()
-        col.operator("multi_view.export_current_view", text="导出当前选中视图")
+        col.operator("multi_view.export_current_view", text="导出选中视图")
         col.operator("multi_view.export_all_views", text="导出所有视图")

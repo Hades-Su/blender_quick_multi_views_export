@@ -1,7 +1,7 @@
 bl_info = {
     "name": "一键导出多视角图片",
     "author": "Hades Su",
-    "version": (1, 0, 0),
+    "version": (1, 2, 0),
     "blender": (2, 80, 0),
     "location": "3D View > Sidebar > 多视角导出",
     "description": "一键导出3D模型的多个视角图片",
@@ -20,7 +20,8 @@ classes = (
     export_multi_view.MULTI_VIEW_OT_ExportAllViews,
     export_multi_view.MULTI_VIEW_OT_AddView,
     export_multi_view.MULTI_VIEW_OT_RemoveView,
-    export_multi_view.MULTI_VIEW_OT_AddPresetView,
+    export_multi_view.MULTI_VIEW_OT_AddPresetThreeView,
+    export_multi_view.MULTI_VIEW_OT_AddPresetSixView,
 )
 
 def register():
@@ -41,10 +42,10 @@ def register():
         bpy.types.Scene.multi_view_scene_lights = bpy.props.BoolProperty(name="场景灯光", default=False)
     if not hasattr(bpy.types.Scene, "multi_view_scene_world"):
         bpy.types.Scene.multi_view_scene_world = bpy.props.BoolProperty(name="场景世界", default=False)
-    if not hasattr(bpy.types.Scene, "multi_view_world_color"):
-        bpy.types.Scene.multi_view_world_color = bpy.props.FloatVectorProperty(name="世界颜色", subtype='COLOR', size=4, default=(0.05, 0.05, 0.05, 1.0))
-    if not hasattr(bpy.types.Scene, "multi_view_world_strength"):
-        bpy.types.Scene.multi_view_world_strength = bpy.props.FloatProperty(name="世界强度", default=1.0, min=0.0, max=10.0)
+    # if not hasattr(bpy.types.Scene, "multi_view_world_color"):
+    #     bpy.types.Scene.multi_view_world_color = bpy.props.FloatVectorProperty(name="世界颜色", subtype='COLOR', size=4, default=(0.05, 0.05, 0.05, 1.0))
+    # if not hasattr(bpy.types.Scene, "multi_view_world_strength"):
+    #     bpy.types.Scene.multi_view_world_strength = bpy.props.FloatProperty(name="世界强度", default=1.0, min=0.0, max=1000.0)
 
 def unregister():
     for cls in reversed(classes):
@@ -64,10 +65,10 @@ def unregister():
         del bpy.types.Scene.multi_view_scene_lights
     if hasattr(bpy.types.Scene, "multi_view_scene_world"):
         del bpy.types.Scene.multi_view_scene_world
-    if hasattr(bpy.types.Scene, "multi_view_world_color"):
-        del bpy.types.Scene.multi_view_world_color
-    if hasattr(bpy.types.Scene, "multi_view_world_strength"):
-        del bpy.types.Scene.multi_view_world_strength
+    # if hasattr(bpy.types.Scene, "multi_view_world_color"):
+    #     del bpy.types.Scene.multi_view_world_color
+    # if hasattr(bpy.types.Scene, "multi_view_world_strength"):
+    #     del bpy.types.Scene.multi_view_world_strength
 
 if __name__ == "__main__":
     register()

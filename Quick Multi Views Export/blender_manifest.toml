@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "quick_multi_views_export"
 name = "Quick Multi Views Export"
-version = "1.0.0"
+version = "1.2.0"
 type = "add-on"
 tagline = "Quick Multi Views Export"
 description = "Quickly, automatically, and easily export multi-view images of 3D models."
